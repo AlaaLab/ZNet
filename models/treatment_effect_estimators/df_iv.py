@@ -20,7 +20,6 @@ from torch.utils.data import DataLoader
 import numpy as np
 from pytorch_lightning.callbacks import EarlyStopping
 from DGP.dataset_class import ParentDataset
-# from pytorch_lightning.loggers.neptune import NeptuneLogger
 from pytorch_lightning.loggers import CSVLogger
 from models.treatment_effect_estimators.parent_class import DownstreamParent
 
@@ -171,16 +170,10 @@ class DFIVModel(pl.LightningModule):
         self.manual_backward(loss2_xi)
         self.optimizer_xi.step()
 
-        # x_np = batch2[:, (2 + self.zdim):-1].detach().cpu().numpy()
-        # y_hat0 = self.predict_cf(x_np, 0, mu=mu_hat2.detach())
-        # y_hat1 = self.predict_cf(x_np, 1, mu=mu_hat2.detach())
-        # tau_hat = y_hat1 - y_hat0
-        # cate_loss = np.mean((batch2[:, -1].detach().cpu().numpy() - tau_hat) ** 2)
         # Logging
         self.log('loss1', loss1_psi.detach().cpu().numpy().item(), logger=True, on_epoch=True, on_step=False)
         self.log('loss2', loss2_phi.detach().cpu().numpy().item(), logger=True, on_epoch=True, on_step=False)
-        # self.log('cate_loss', cate_loss.item(), logger=True, on_epoch=True, on_step=False)
-
+        
     def compute_final_mu(self, data_np):
         self.eval()
         data_torch = torch.from_numpy(data_np.astype(np.float32))
@@ -195,33 +188,31 @@ class DFIVModel(pl.LightningModule):
         self.eval()
         n = x_np.shape[0]
         x = torch.from_numpy(x_np.astype(np.float32))
-        # x = x.to(self.device)
+        
         repr_xi = self.xi(x)
-        repr_phi = self.phi(torch.full((n, 1), float(nr))) #.to(self.device))
+        repr_phi = self.phi(torch.full((n, 1), float(nr))) 
         # Outerproduct of psi and xi
         outer = DFIVModel.batch_outer_vec(repr_phi, repr_xi)
-        # if mu is None:
+
         # Counterfactual outcomes
         y_hat = torch.squeeze(torch.matmul(torch.unsqueeze(self.mu, 0), torch.transpose(outer, 0, 1)))
-        # else:
-        #     y_hat = torch.squeeze(torch.matmul(torch.unsqueeze(mu, 0), torch.transpose(outer, 0, 1)))
+
         return y_hat.detach().cpu().numpy() 
 
     def predict_outcome(self, x_np, t_np):
         self.eval()
         n = x_np.shape[0]
         x = torch.from_numpy(x_np.astype(np.float32))
-        # x = x.to(self.device)
+        
         repr_xi = self.xi(x)
-        # print(torch.from_numpy(t_np.astype(np.float32)).shape)
-        repr_phi = self.phi(torch.from_numpy(t_np.astype(np.float32))) #.to(self.device))
+
+        repr_phi = self.phi(torch.from_numpy(t_np.astype(np.float32))) 
         # Outerproduct of psi and xi
         outer = DFIVModel.batch_outer_vec(repr_phi, repr_xi)
-        # if mu is None:
+
         # Counterfactual outcomes
         y_hat = torch.squeeze(torch.matmul(torch.unsqueeze(self.mu, 0), torch.transpose(outer, 0, 1)))
-        # else:
-        #     y_hat = torch.squeeze(torch.matmul(torch.unsqueeze(mu, 0), torch.transpose(outer, 0, 1)))
+        
         return y_hat.detach().cpu().numpy() 
 
     def predict_ite(self, x_np):
@@ -284,23 +275,16 @@ class DFIV(DownstreamParent):
         second_loader = DataLoader(dataset=d_second, batch_size=self.config["batch_size"],
                                 shuffle=True)
         loaders = {"first_stage": first_loader, "second_stage": second_loader}
-        # print("Defining DFIV model...")
+       
         # Create DFIV model
         dfiv = DFIVModel(config=self.config, xdim=X.shape[1], zdim=Z.shape[1]) #d_first.size(1) - 3)
-        # Check for available GPUs
-        # if torch.cuda.is_available():
-        #     gpu = -1
-        # else:
-        #     gpu = 0
-
+        
         # Train model
         if self.logging:
             logger = CSVLogger(save_dir="logs/dfiv/", name=f"{self.config['log_file']}")
         else:
             logger = False
-            # Trainer = pl.Trainer(max_epochs=epochs, enable_progress_bar=False, #gpus=gpu,
-            #                      enable_model_summary=False, logger=False, enable_checkpointing=False)
-        
+           
         if self.early_stopping:
             early_stopping_callback = EarlyStopping(
                 monitor="loss2", 
@@ -313,7 +297,6 @@ class DFIV(DownstreamParent):
         else: 
             Trainer = pl.Trainer(max_epochs=self.epochs, enable_progress_bar=False, #gpus=gpu,
                                 enable_model_summary=False, logger=logger)
-        # print("Training DFIV model...")
         
         Trainer.fit(dfiv, train_dataloaders=loaders)
         # Compute structural function after training using entire dataset

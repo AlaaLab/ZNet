@@ -53,11 +53,6 @@ def train_nn(data, config, model_class, epochs=50, validation=True,
     train_loader, val_loader = create_loaders(data, config["batch_size"], validation=validation, train_indices=train_indices, val_indices=val_indices)
     # Model
     model = model_class(config=config, **kwargs)
-    # Check for available GPUs
-    # if torch.cuda.is_available():
-    #     gpu = -1
-    # else:
-    #     gpu = 0
     # Train
     if logging:
         logger = CSVLogger(save_dir="logs/", name=f"deepiv_{config['log_file']}")
@@ -67,23 +62,21 @@ def train_nn(data, config, model_class, epochs=50, validation=True,
     if early_stopping:
         if validation:
             early_stopping_callback = EarlyStopping(
-                monitor="val_loss", #val_cate_loss", 
+                monitor="val_loss", 
                 patience=patience, 
                 mode="min"
             )
         else:
             early_stopping_callback = EarlyStopping(
-                monitor="train_loss", #"cate_loss", 
+                monitor="train_loss", 
                 patience=patience, 
                 mode="min"
             )
 
-        # Trainer1 = Trainer(min_epochs=50, max_epochs=epochs, enable_progress_bar=False, enable_model_summary=False, #gpus=gpu,
-        #                         logger=logger, enable_checkpointing=False, callbacks=[early_stopping_callback], log_every_n_steps=1)
-        Trainer1 = Trainer(max_epochs=epochs, enable_progress_bar=False, enable_model_summary=False, #gpus=gpu,
+        Trainer1 = Trainer(max_epochs=epochs, enable_progress_bar=False, enable_model_summary=False, 
                                     logger=logger, enable_checkpointing=False, callbacks=[early_stopping_callback], log_every_n_steps=1)
     else:   
-        Trainer1 = Trainer(max_epochs=epochs, enable_progress_bar=False, enable_model_summary=False, #gpus=gpu,
+        Trainer1 = Trainer(max_epochs=epochs, enable_progress_bar=False, enable_model_summary=False,
                                 logger=logger, enable_checkpointing=False, log_every_n_steps=1)
 
     if validation:
@@ -99,19 +92,6 @@ def train_nn(data, config, model_class, epochs=50, validation=True,
 
 
 def split_data(data):
-    # if type(data) == np.ndarray:
-    #     Y = data[:, 0]
-    #     T = data[:, 1]
-    #     Z = data[:, 2]
-    #     X = data[:, 3:]
-    # else:
-    # x_cols = [i for i in data.columns if i.startswith('x')]
-    # z_cols = [i for i in data.columns if i.startswith('z')]
-
-    # X = data[x_cols].values
-    # T = data['t1'].values #np.expand_dims(data['t1'].values, axis=1)
-    # Y = data['y1'].values #np.expand_dims(data['y1'].values, axis=1)
-    # Z = data[z_cols].values
     Y = data.y
     T = data.t
     Z = data.z
@@ -161,7 +141,7 @@ class ffnn(pl.LightningModule):
 
     def training_step(self, train_batch, batch_idx):
         self.train()
-        # Formnat data
+        # Format data
         [Y, X] = self.format_input(train_batch)
         # Forward pass
         y_hat = self.forward(X)
@@ -176,7 +156,7 @@ class ffnn(pl.LightningModule):
 
     def validation_step(self, train_batch, batch_idx):
         self.eval()
-        # Formnat data
+        # Format data
         [Y, X] = self.format_input(train_batch)
         # Forward pass
         y_hat = self.forward(X)
@@ -201,41 +181,8 @@ class ffnn(pl.LightningModule):
 
 
 def train_base_model(model_name, d_train, params=None, validation=False, logging=False):
-    # import models.linear_methods as linear_iv
     import models.deep_iv as deepiv
-    # import models.dml_dr_iv as dml
-    # import models.df_iv as dfiv
-    # import models.deepgmm as deepgmm
-    # import models.standard_ite as standard_ite
-    # import models.bcf_iv as bcfiv
-    # import models.kiv as kiv
-    # import models.mr_learner as mr
-
     model = None
-    # if model_name == "ncnet":
-    #     model, _ = train_nn(data=d_train, config=params, model_class=mr.ncnet,
-    #                                input_size=d_train.shape[1] - 3, validation=validation, logging=logging)
-    # if model_name == "ncnet_cf":
-    #     model, _ = train_nn(data=d_train, config=params, model_class=mr.ncnet_cf,
-    #                                input_size=d_train.shape[1] - 3, validation=validation, logging=logging)
-    # if model_name == "dmliv":
-    #     model = dml.train_dmliv(data=d_train, config=params, validation=validation, logging=logging)
-    # if model_name == "tsls":
-    #     model = linear_iv.train_twosls(d_train)
-    # if model_name == "waldlinear":
-    #     model = linear_iv.train_Wald_linear(d_train)
     if model_name == "deepiv":
         model = deepiv.train_DeepIV(d_train, params, validation=validation, logging=logging)
-    # if model_name == "dfiv":
-    #     model = dfiv.train_dfiv(d_train, params, epochs=200, logging=logging)
-    # if model_name == "deepgmm":
-    #     model, _ = train_nn(data=d_train, config=params, model_class=deepgmm.DeepGMM, epochs=200,
-    #                                xdim=d_train.shape[1] - 3, validation=validation, logging=logging)
-    # if model_name == "kiv":
-    #     model = kiv.train_kiv(data=d_train, config=params)
-    # if model_name == "tarnet":
-    #     model, _ = train_nn(data=np.delete(d_train, 2, 1), config=params, model_class=standard_ite.TARNet,
-    #                                input_size=d_train.shape[1] - 3, validation=validation, logging=logging)
-    # if model_name == "bcfiv":
-    #     model = bcfiv.train_bcf_iv(d_train, params)
     return model

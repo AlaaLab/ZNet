@@ -9,14 +9,13 @@ from seed_utils import set_seed
 
 set_seed(42)
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.optim as optim
-import pdb
-import numpy as np
 import copy
 import random
+import torch.optim as optim
 
 #######################################################################################
 class PCGrad():
@@ -164,14 +163,6 @@ class PCGrad():
                 - shapes: List of parameter shapes
                 - has_grads: List of masks for parameters with gradients
         """
-        pack the gradient of the parameters of the network for each objective
-        
-        output:
-        - grad: a list of the gradient of the parameters
-        - shape: a list of the shape of the parameters
-        - has_grad: a list of mask represent whether the parameter has gradient
-        '''
-
         grads, shapes, has_grads = [], [], []
         for obj in objectives:
             self._optim.zero_grad(set_to_none=True)
@@ -273,4 +264,3 @@ if __name__ == '__main__':
     pc_adam.pc_backward([loss1, loss2])
     for p in net.parameters():
         print(p.grad)
-

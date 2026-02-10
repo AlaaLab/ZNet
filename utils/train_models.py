@@ -1,7 +1,7 @@
 #######################################################################################
 # Author: Jenna Fields, edits Franny Dean
 # Script: train_models.py
-# Function:  
+# Function: Code to run model training
 # Date: 02/06/2026
 #######################################################################################
 
@@ -329,8 +329,6 @@ def train_ecg_znet(data,
             dir_name = f"{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
         os.makedirs(f"{prepend_path}znet_generated_data/{dir_name}/", exist_ok=True)
         znet_data.save_csv(f"{prepend_path}znet_generated_data/{dir_name}/znet_df.csv")
-        # Skip combining og dataset for ecgs...
-        # znet_data.get_combined_dataset().to_csv(f"{prepend_path}znet_generated_data/{dir_name}/combined_znet_df.csv")
         with open(f"{prepend_path}znet_generated_data/{dir_name}/znet_dataset.pkl", "wb") as f:
             pickle.dump(znet_data, f)
         save_data_path = f"{prepend_path}znet_generated_data/{dir_name}/"

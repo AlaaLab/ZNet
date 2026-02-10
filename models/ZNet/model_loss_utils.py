@@ -10,17 +10,8 @@ from seed_utils import set_seed
 set_seed(42)
 
 from tqdm import tqdm
-import numpy as np
-import scipy.stats as stats
-import matplotlib.pyplot as plt
-from sklearn.metrics import roc_auc_score, roc_curve
-import torch.nn.functional as F
 from torch import nn
 import torch
-import pandas as pd
-from sklearn.manifold import TSNE
-import itertools
-import statsmodels.api as sm  
 import sys
 
 #######################################################################################
@@ -439,282 +430,6 @@ class ZNetLoss(nn.Module):
                 pearson_z_t,
                 mse_xt if self.train_xt_net else None]
 
-
-#######################################################################################
-# ZNet Layers
-    
-class ZNetModel(nn.Module):
-    def __init__(self, 
-                 input_dim, 
-                 c_dim, 
-                 z_dim, 
-                 output_dim, 
-                 hidden_dim_h=64, 
-                 is_linear=False, 
-                 sm_temp=2, 
-                 use_softmax=True,
-                 activation_function='relu',
-                 pretrain_xty_model=True,
-                 xty_model=None,
-                 ):
-        """
-        ZNet neural network architecture.
-        
-        Defines the network structure for learning disentangled C and Z representations,
-        treatment prediction, and outcome prediction.
-        
-        Args:
-            input_dim (int): Dimensionality of input features.
-            c_dim (int): Dimensionality of confounder representation C.
-            z_dim (int): Dimensionality of IV representation Z.
-            output_dim (int): Dimensionality of outcome.
-            hidden_dim_h (int): Hidden layer dimension. Defaults to 64.
-            is_linear (bool): Use linear networks (no activations). Defaults to False.
-            sm_temp (float): Temperature for softmax. Defaults to 2.
-            use_softmax (bool): Apply softmax to C and Z. Defaults to True.
-            activation_function (str): Activation function ('relu', 'leaky_relu', 'sigmoid', 'tanh'). Defaults to 'relu'.
-            pretrain_xty_model (bool): Whether X,T,Y model is pretrained. Defaults to True.
-            xty_model (nn.Module, optional): Pretrained X,T,Y model. Defaults to None.
-        """
-        super(ZNetModel, self).__init__()
-
-        if activation_function == 'relu':
-            self.nonlinearity = nn.ReLU()
-        elif activation_function == 'leaky_relu':
-            self.nonlinearity = nn.LeakyReLU()
-        elif activation_function == 'sigmoid':
-            self.nonlinearity = nn.Sigmoid()
-        elif activation_function == 'tanh':
-            self.nonlinearity = nn.Tanh()
-        else:
-            raise ValueError(f"Unknown activation function: {activation_function}")
-        
-        if use_softmax and c_dim > 1:
-            self.c = nn.Sequential(nn.Linear(input_dim, hidden_dim_h), 
-                            self.nonlinearity,
-                        nn.Linear(hidden_dim_h, c_dim), 
-                        SoftmaxWithTemperature(dim=-1, temperature=sm_temp)
-                        )
-        else:
-            self.c = nn.Sequential(nn.Linear(input_dim, hidden_dim_h), 
-                            self.nonlinearity,
-                        nn.Linear(hidden_dim_h, c_dim),)
-        if use_softmax and z_dim > 1:
-            self.z = nn.Sequential(nn.Linear(input_dim, hidden_dim_h),
-                                        self.nonlinearity,
-                                    nn.Linear(hidden_dim_h, z_dim), 
-                                    SoftmaxWithTemperature(dim=-1, temperature=sm_temp))
-        else:
-            self.z = nn.Sequential(nn.Linear(input_dim, hidden_dim_h),
-                                        self.nonlinearity,
-                                    nn.Linear(hidden_dim_h, z_dim),)
-        
-        self.pretrain_xty_model = pretrain_xty_model
-        self.x_t_y = xty_model
-        
-        if is_linear:
-            self.t_hat = nn.Sequential(nn.Linear(z_dim, hidden_dim_h), 
-                                    nn.Linear(hidden_dim_h, output_dim))
-            
-            self.c_y = nn.Sequential(
-                nn.Linear(c_dim + 1, hidden_dim_h), 
-                nn.Linear(hidden_dim_h, output_dim))
-            
-            if not self.pretrain_xty_model:
-                self.x_t_y = nn.Sequential(
-                    nn.Linear(input_dim + 1, hidden_dim_h), 
-                    nn.Linear(hidden_dim_h, output_dim))
-        else:
-            self.t_hat = nn.Sequential(nn.Linear(z_dim, hidden_dim_h), 
-                                     self.nonlinearity,
-                                    nn.Linear(hidden_dim_h, output_dim))
-            
-            self.c_y = nn.Sequential(
-                nn.Linear(c_dim + 1, hidden_dim_h), 
-                self.nonlinearity,
-                nn.Linear(hidden_dim_h, output_dim))
-            
-            if not self.pretrain_xty_model:
-                self.x_t_y = nn.Sequential(
-                    nn.Linear(input_dim + 1, hidden_dim_h), 
-                    self.nonlinearity,
-                    nn.Linear(hidden_dim_h, output_dim))
-        
-        self.z_layers = nn.ModuleList([self.z, self.t_hat])
-    
-    def forward(self, x, t):
-        """
-        Forward pass through ZNet.
-        
-        Args:
-            x (torch.Tensor): Input features of shape (n_samples, input_dim).
-            t (torch.Tensor): Treatment indicators of shape (n_samples, 1).
-            
-        Returns:
-            tuple: (c, z, t_hat, c_y, x_t_y) - All network outputs.
-        """
-        c = self.c(x) 
-        z = self.z(x) 
-        t_hat = self.t_hat(z) 
-
-        c_y = self.c_y(torch.concatenate([c, t], dim=-1))
-        x_t_y = self.x_t_y(torch.concatenate([x, t], dim=-1)) # We use this to get the error on y given x and t
-
-        return c, z, t_hat, c_y, x_t_y
-
-class ZNetECGModel(nn.Module):
-    def __init__(self, 
-                 input_dim, 
-                 c_dim, 
-                 z_dim, 
-                 output_dim, 
-                 embedded_dim=64,
-                 ecg_channels=12,
-                 hidden_dim_h=64, 
-                 is_linear=False, 
-                 sm_temp=2, 
-                 use_softmax=True,
-                 activation_function='relu',
-                 pretrain_xty_model=True,
-                 xty_model=None,
-                 ):
-         """
-        ZNet neural network architecture for ECGs. The addition of a ResNet head allows for high dimensional data
-        
-        Defines the network structure for learning disentangled C and Z representations,
-        treatment prediction, and outcome prediction.
-        
-        Args:
-            input_dim (int): Dimensionality of input ECG features.
-            c_dim (int): Dimensionality of confounder representation C.
-            z_dim (int): Dimensionality of IV representation Z.
-            output_dim (int): Dimensionality of outcome.
-            embedded_dim (int): ECG embedded dimension after ResNet layers.
-            ecg_channels (int): ECG leads (typically 12).
-            hidden_dim_h (int): Hidden layer dimension. Defaults to 64.
-            is_linear (bool): Use linear networks (no activations). Defaults to False.
-            sm_temp (float): Temperature for softmax. Defaults to 2.
-            use_softmax (bool): Apply softmax to C and Z. Defaults to True.
-            activation_function (str): Activation function ('relu', 'leaky_relu', 'sigmoid', 'tanh'). Defaults to 'relu'.
-            pretrain_xty_model (bool): Whether X,T,Y model is pretrained. Defaults to True.
-            xty_model (nn.Module, optional): Pretrained X,T,Y model. Defaults to None.
-        """
-        super(ZNetECGModel, self).__init__()
-        
-        if activation_function == 'relu':
-            self.nonlinearity = nn.ReLU()
-        elif activation_function == 'leaky_relu':
-            self.nonlinearity = nn.LeakyReLU()
-        elif activation_function == 'sigmoid':
-            self.nonlinearity = nn.Sigmoid()
-        elif activation_function == 'tanh':
-            self.nonlinearity = nn.Tanh()
-        else:
-            raise ValueError(f"Unknown activation function: {activation_function}")
-        
-        self.resnet = ResNet1D(BasicBlock1D, [2,2, 2], num_classes=embedded_dim, in_channels=ecg_channels)
-        
-        if use_softmax and c_dim > 1:
-            self.c = nn.Sequential(nn.Linear(embedded_dim, hidden_dim_h), 
-                            self.nonlinearity,
-                        nn.Linear(hidden_dim_h, c_dim), 
-                        SoftmaxWithTemperature(dim=-1, temperature=sm_temp)
-                        )
-        else:
-            self.c = nn.Sequential(nn.Linear(embedded_dim, hidden_dim_h), 
-                            self.nonlinearity,
-                        nn.Linear(hidden_dim_h, c_dim),)
-        if use_softmax and z_dim > 1:
-            self.z = nn.Sequential(nn.Linear(embedded_dim, hidden_dim_h),
-                                        self.nonlinearity,
-                                    nn.Linear(hidden_dim_h, z_dim), 
-                                    SoftmaxWithTemperature(dim=-1, temperature=sm_temp))
-        else:
-            self.z = nn.Sequential(nn.Linear(embedded_dim, hidden_dim_h),
-                                        self.nonlinearity,
-                                    nn.Linear(hidden_dim_h, z_dim),)
-        
-        self.pretrain_xty_model = pretrain_xty_model
-        self.x_t_y = xty_model
-        
-        if is_linear:
-            self.t_hat = nn.Sequential(nn.Linear(z_dim, hidden_dim_h), 
-                                    nn.Linear(hidden_dim_h, output_dim))
-            
-            self.c_y = nn.Sequential(
-                nn.Linear(c_dim + 1, hidden_dim_h), 
-                nn.Linear(hidden_dim_h, output_dim))
-            
-            if not self.pretrain_xty_model:
-                self.xty_resnet = ResNet1D(BasicBlock1D, [2,2,2], num_classes=embedded_dim+1, in_channels=ecg_channels)
-                self.x_t_y = nn.Sequential(self.xty_resnet,
-                    nn.Linear(embedded_dim + 1, hidden_dim_h), 
-                    nn.Linear(hidden_dim_h, output_dim))
-        else:
-            self.t_hat = nn.Sequential(nn.Linear(z_dim, hidden_dim_h), 
-                                     self.nonlinearity,
-                                    nn.Linear(hidden_dim_h, output_dim))
-            
-            self.c_y = nn.Sequential(
-                nn.Linear(c_dim + 1, hidden_dim_h), 
-                self.nonlinearity,
-                nn.Linear(hidden_dim_h, output_dim))
-            
-            if not self.pretrain_xty_model:
-                self.xty_resnet = ResNet1D(BasicBlock1D, [2,2,2], num_classes=embedded_dim, in_channels=ecg_channels)
-                self.x_t_y = nn.Sequential(self.xty_resnet,
-                    nn.Linear(embedded_dim + 1, hidden_dim_h), 
-                    self.nonlinearity,
-                    nn.Linear(hidden_dim_h, output_dim))
-        
-        self.z_layers = nn.ModuleList([self.z, self.t_hat])
-    
-    def forward(self, x, t):
-        #x = x.to(self.device)
-        #t = t.to(self.device)
-        x_embedded = self.resnet(x)
-        c = self.c(x_embedded) # C
-        z = self.z(x_embedded) # Z
-        t_hat = self.t_hat(z)  # T hat
-        
-        if t.dim() == 1:
-            t = t.unsqueeze(-1)
-
-        c_y = self.c_y(torch.concatenate([c, t], dim=-1))
-        x_t_y = self.x_t_y(x, t) # We use this to get the error on y given x and t
-        
-        return c, z, t_hat, c_y, x_t_y
-
-
-class CateLoss(nn.Module):
-    def __init__(self, true_cate=None):
-        """
-        Loss for evaluating Conditional Average Treatment Effect (CATE) estimation.
-        
-        Args:
-            true_cate (array-like, optional): True CATE values for comparison. Defaults to None.
-        """
-        super(CateLoss, self).__init__()
-        self.true_cate = true_cate
-
-    def forward(self, c_y, t):
-        """
-        Compute CATE loss if true CATE is available.
-        
-        Args:
-            c_y (torch.Tensor): Predicted outcomes from C and t.
-            t (torch.Tensor): Treatment indicators.
-            
-        Returns:
-            float or None: Mean squared error between estimated and true CATE, or None if true_cate not available.
-        """
-        if self.true_cate is not None:
-            p0_idx = torch.where(t==0)[0]
-            p1_idx = torch.where(t==1)[0]
-            cate = c_y[p1_idx] - c_y[p0_idx]
-            return torch.mean(self.true_cate - cate).detach().cpu().numpy().item() ** 2
-        return None
-
 #######################################################################################
 # Separately train a network to learn Y from X,T to calculate epsilon
 
@@ -1096,3 +811,278 @@ class ResNet1D(nn.Module):
         x = torch.flatten(x, 1)
         x = self.fc(x)
         return x
+    
+#######################################################################################
+# ZNet Layers
+    
+class ZNetModel(nn.Module):
+    def __init__(self, 
+                 input_dim, 
+                 c_dim, 
+                 z_dim, 
+                 output_dim, 
+                 hidden_dim_h=64, 
+                 is_linear=False, 
+                 sm_temp=2, 
+                 use_softmax=True,
+                 activation_function='relu',
+                 pretrain_xty_model=True,
+                 xty_model=None,
+                 ):
+        """
+        ZNet neural network architecture.
+        
+        Defines the network structure for learning disentangled C and Z representations,
+        treatment prediction, and outcome prediction.
+        
+        Args:
+            input_dim (int): Dimensionality of input features.
+            c_dim (int): Dimensionality of confounder representation C.
+            z_dim (int): Dimensionality of IV representation Z.
+            output_dim (int): Dimensionality of outcome.
+            hidden_dim_h (int): Hidden layer dimension. Defaults to 64.
+            is_linear (bool): Use linear networks (no activations). Defaults to False.
+            sm_temp (float): Temperature for softmax. Defaults to 2.
+            use_softmax (bool): Apply softmax to C and Z. Defaults to True.
+            activation_function (str): Activation function ('relu', 'leaky_relu', 'sigmoid', 'tanh'). Defaults to 'relu'.
+            pretrain_xty_model (bool): Whether X,T,Y model is pretrained. Defaults to True.
+            xty_model (nn.Module, optional): Pretrained X,T,Y model. Defaults to None.
+        """
+        super(ZNetModel, self).__init__()
+
+        if activation_function == 'relu':
+            self.nonlinearity = nn.ReLU()
+        elif activation_function == 'leaky_relu':
+            self.nonlinearity = nn.LeakyReLU()
+        elif activation_function == 'sigmoid':
+            self.nonlinearity = nn.Sigmoid()
+        elif activation_function == 'tanh':
+            self.nonlinearity = nn.Tanh()
+        else:
+            raise ValueError(f"Unknown activation function: {activation_function}")
+        
+        if use_softmax and c_dim > 1:
+            self.c = nn.Sequential(nn.Linear(input_dim, hidden_dim_h), 
+                            self.nonlinearity,
+                        nn.Linear(hidden_dim_h, c_dim), 
+                        SoftmaxWithTemperature(dim=-1, temperature=sm_temp)
+                        )
+        else:
+            self.c = nn.Sequential(nn.Linear(input_dim, hidden_dim_h), 
+                            self.nonlinearity,
+                        nn.Linear(hidden_dim_h, c_dim),)
+        if use_softmax and z_dim > 1:
+            self.z = nn.Sequential(nn.Linear(input_dim, hidden_dim_h),
+                                        self.nonlinearity,
+                                    nn.Linear(hidden_dim_h, z_dim), 
+                                    SoftmaxWithTemperature(dim=-1, temperature=sm_temp))
+        else:
+            self.z = nn.Sequential(nn.Linear(input_dim, hidden_dim_h),
+                                        self.nonlinearity,
+                                    nn.Linear(hidden_dim_h, z_dim),)
+        
+        self.pretrain_xty_model = pretrain_xty_model
+        self.x_t_y = xty_model
+        
+        if is_linear:
+            self.t_hat = nn.Sequential(nn.Linear(z_dim, hidden_dim_h), 
+                                    nn.Linear(hidden_dim_h, output_dim))
+            
+            self.c_y = nn.Sequential(
+                nn.Linear(c_dim + 1, hidden_dim_h), 
+                nn.Linear(hidden_dim_h, output_dim))
+            
+            if not self.pretrain_xty_model:
+                self.x_t_y = nn.Sequential(
+                    nn.Linear(input_dim + 1, hidden_dim_h), 
+                    nn.Linear(hidden_dim_h, output_dim))
+        else:
+            self.t_hat = nn.Sequential(nn.Linear(z_dim, hidden_dim_h), 
+                                     self.nonlinearity,
+                                    nn.Linear(hidden_dim_h, output_dim))
+            
+            self.c_y = nn.Sequential(
+                nn.Linear(c_dim + 1, hidden_dim_h), 
+                self.nonlinearity,
+                nn.Linear(hidden_dim_h, output_dim))
+            
+            if not self.pretrain_xty_model:
+                self.x_t_y = nn.Sequential(
+                    nn.Linear(input_dim + 1, hidden_dim_h), 
+                    self.nonlinearity,
+                    nn.Linear(hidden_dim_h, output_dim))
+        
+        self.z_layers = nn.ModuleList([self.z, self.t_hat])
+    
+    def forward(self, x, t):
+        """
+        Forward pass through ZNet.
+        
+        Args:
+            x (torch.Tensor): Input features of shape (n_samples, input_dim).
+            t (torch.Tensor): Treatment indicators of shape (n_samples, 1).
+            
+        Returns:
+            tuple: (c, z, t_hat, c_y, x_t_y) - All network outputs.
+        """
+        c = self.c(x) 
+        z = self.z(x) 
+        t_hat = self.t_hat(z) 
+
+        c_y = self.c_y(torch.concatenate([c, t], dim=-1))
+        x_t_y = self.x_t_y(torch.concatenate([x, t], dim=-1)) # We use this to get the error on y given x and t
+
+        return c, z, t_hat, c_y, x_t_y
+
+class ZNetECGModel(nn.Module):
+    def __init__(self, 
+                    input_dim, 
+                    c_dim, 
+                    z_dim, 
+                    output_dim, 
+                    embedded_dim=64,
+                    ecg_channels=12,
+                    hidden_dim_h=64, 
+                    is_linear=False, 
+                    sm_temp=2, 
+                    use_softmax=True,
+                    activation_function='relu',
+                    pretrain_xty_model=True,
+                    xty_model=None,
+                    ):
+        """
+        ZNet neural network architecture for ECGs. The addition of a ResNet head allows for high dimensional data
+        
+        Defines the network structure for learning disentangled C and Z representations,
+        treatment prediction, and outcome prediction.
+        
+        Args:
+            input_dim (int): Dimensionality of input ECG features.
+            c_dim (int): Dimensionality of confounder representation C.
+            z_dim (int): Dimensionality of IV representation Z.
+            output_dim (int): Dimensionality of outcome.
+            embedded_dim (int): ECG embedded dimension after ResNet layers.
+            ecg_channels (int): ECG leads (typically 12).
+            hidden_dim_h (int): Hidden layer dimension. Defaults to 64.
+            is_linear (bool): Use linear networks (no activations). Defaults to False.
+            sm_temp (float): Temperature for softmax. Defaults to 2.
+            use_softmax (bool): Apply softmax to C and Z. Defaults to True.
+            activation_function (str): Activation function ('relu', 'leaky_relu', 'sigmoid', 'tanh'). Defaults to 'relu'.
+            pretrain_xty_model (bool): Whether X,T,Y model is pretrained. Defaults to True.
+            xty_model (nn.Module, optional): Pretrained X,T,Y model. Defaults to None.
+        """
+        super(ZNetECGModel, self).__init__()
+        
+        if activation_function == 'relu':
+            self.nonlinearity = nn.ReLU()
+        elif activation_function == 'leaky_relu':
+            self.nonlinearity = nn.LeakyReLU()
+        elif activation_function == 'sigmoid':
+            self.nonlinearity = nn.Sigmoid()
+        elif activation_function == 'tanh':
+            self.nonlinearity = nn.Tanh()
+        else:
+            raise ValueError(f"Unknown activation function: {activation_function}")
+        
+        self.resnet = ResNet1D(BasicBlock1D, [2,2, 2], num_classes=embedded_dim, in_channels=ecg_channels)
+        
+        if use_softmax and c_dim > 1:
+            self.c = nn.Sequential(nn.Linear(embedded_dim, hidden_dim_h), 
+                            self.nonlinearity,
+                        nn.Linear(hidden_dim_h, c_dim), 
+                        SoftmaxWithTemperature(dim=-1, temperature=sm_temp)
+                        )
+        else:
+            self.c = nn.Sequential(nn.Linear(embedded_dim, hidden_dim_h), 
+                            self.nonlinearity,
+                        nn.Linear(hidden_dim_h, c_dim),)
+        if use_softmax and z_dim > 1:
+            self.z = nn.Sequential(nn.Linear(embedded_dim, hidden_dim_h),
+                                        self.nonlinearity,
+                                    nn.Linear(hidden_dim_h, z_dim), 
+                                    SoftmaxWithTemperature(dim=-1, temperature=sm_temp))
+        else:
+            self.z = nn.Sequential(nn.Linear(embedded_dim, hidden_dim_h),
+                                        self.nonlinearity,
+                                    nn.Linear(hidden_dim_h, z_dim),)
+        
+        self.pretrain_xty_model = pretrain_xty_model
+        self.x_t_y = xty_model
+        
+        if is_linear:
+            self.t_hat = nn.Sequential(nn.Linear(z_dim, hidden_dim_h), 
+                                    nn.Linear(hidden_dim_h, output_dim))
+            
+            self.c_y = nn.Sequential(
+                nn.Linear(c_dim + 1, hidden_dim_h), 
+                nn.Linear(hidden_dim_h, output_dim))
+            
+            if not self.pretrain_xty_model:
+                self.xty_resnet = ResNet1D(BasicBlock1D, [2,2,2], num_classes=embedded_dim+1, in_channels=ecg_channels)
+                self.x_t_y = nn.Sequential(self.xty_resnet,
+                    nn.Linear(embedded_dim + 1, hidden_dim_h), 
+                    nn.Linear(hidden_dim_h, output_dim))
+        else:
+            self.t_hat = nn.Sequential(nn.Linear(z_dim, hidden_dim_h), 
+                                        self.nonlinearity,
+                                    nn.Linear(hidden_dim_h, output_dim))
+            
+            self.c_y = nn.Sequential(
+                nn.Linear(c_dim + 1, hidden_dim_h), 
+                self.nonlinearity,
+                nn.Linear(hidden_dim_h, output_dim))
+            
+            if not self.pretrain_xty_model:
+                self.xty_resnet = ResNet1D(BasicBlock1D, [2,2,2], num_classes=embedded_dim, in_channels=ecg_channels)
+                self.x_t_y = nn.Sequential(self.xty_resnet,
+                    nn.Linear(embedded_dim + 1, hidden_dim_h), 
+                    self.nonlinearity,
+                    nn.Linear(hidden_dim_h, output_dim))
+        
+        self.z_layers = nn.ModuleList([self.z, self.t_hat])
+
+    def forward(self, x, t):
+        #x = x.to(self.device)
+        #t = t.to(self.device)
+        x_embedded = self.resnet(x)
+        c = self.c(x_embedded) # C
+        z = self.z(x_embedded) # Z
+        t_hat = self.t_hat(z)  # T hat
+        
+        if t.dim() == 1:
+            t = t.unsqueeze(-1)
+
+        c_y = self.c_y(torch.concatenate([c, t], dim=-1))
+        x_t_y = self.x_t_y(x, t) # We use this to get the error on y given x and t
+        
+        return c, z, t_hat, c_y, x_t_y
+
+
+class CateLoss(nn.Module):
+    def __init__(self, true_cate=None):
+        """
+        Loss for evaluating Conditional Average Treatment Effect (CATE) estimation.
+        
+        Args:
+            true_cate (array-like, optional): True CATE values for comparison. Defaults to None.
+        """
+        super(CateLoss, self).__init__()
+        self.true_cate = true_cate
+
+    def forward(self, c_y, t):
+        """
+        Compute CATE loss if true CATE is available.
+        
+        Args:
+            c_y (torch.Tensor): Predicted outcomes from C and t.
+            t (torch.Tensor): Treatment indicators.
+            
+        Returns:
+            float or None: Mean squared error between estimated and true CATE, or None if true_cate not available.
+        """
+        if self.true_cate is not None:
+            p0_idx = torch.where(t==0)[0]
+            p1_idx = torch.where(t==1)[0]
+            cate = c_y[p1_idx] - c_y[p0_idx]
+            return torch.mean(self.true_cate - cate).detach().cpu().numpy().item() ** 2
+        return None

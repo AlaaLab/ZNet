@@ -1,6 +1,6 @@
 # ZNet: Causal Effect Estimation with Learned Instrument Representations
 
-ZNet is a neural network framework for learning instrumental variable (IV) representations from observational data. The model learns the structural causal model of an IV set up in order to separate observed data into confounders and an instrumental component to enable robust causal effect estimation in the presence of unobserved confounding.
+ZNet is a neural network framework for learning instrumental variable (IV) representations from observational data. The model learns the structural causal model of an IV with moment based constraints to force the IV conditoins. The result is separating observed data into confounders and an instrumental component to enable robust causal effect estimation in the presence of unobserved confounding.
 
 ## Table of Contents
 
@@ -28,7 +28,7 @@ ZNet addresses the challenge of instrumental variable selection by learning two 
 - **Mutual Information**: KDE-based MI estimation as alternative to Pearson correlation
 - **Comparison Methods**: Includes AutoIV, GIV, VIV implementations for benchmarking
 - **Downstream Integration**: Compatible with DeepIV, DFIV, and TARNet estimators
-- **ECG Support**: Includes version of architecture for high-dimensional waveform data
+- **ECG Support**: Includes version of architecture for ECGs as an example of high-dimensional data inputs
 
 ## Installation
 
@@ -137,10 +137,12 @@ znet-iv/
 │       ├── single_obj_search.py     # Single-objective optimization
 │       └── multi_obj_search.py      # Multi-objective optimization
 ├── scripts/
+│   ├── main_driver.py               # Grid search pipeline
 │   ├── main_driver_bayesian.py     # Bayesian search pipeline
 │   ├── bayesian_search_ivgen.py    # IV generation tuning
 │   ├── bayesian_search_downstream.py # Downstream tuning
 │   ├── run_bootstrap.py             # Bootstrap analysis
+│   └── run_grid_search_*.py         # Grid search scripts
 ├── seed_utils.py                    # Reproducibility utilities
 └── README.md                        # This file
 ```
@@ -171,7 +173,7 @@ The core `ZNet` class in `models/ZNet/ZNet.py` implements the disentangled IV le
 
 ### Data Generating Processes
 
-The `DGP/` directory contains utilities for creating synthetic datasets with known causal structure. Use `PhiGeneration` class for flexible data generation
+The `DGP/` directory contains utilities for creating synthetic datasets with known causal structure. See our paper for a description of these.
 
 ### Dataset Classes
 
@@ -326,7 +328,7 @@ ZNet includes comprehensive evaluation metrics for instrumental variable quality
 
 ### Treatment Effect Estimation
 
-Evaluate CATE estimation accuracy:
+Evaluate ATE estimation accuracy:
 
 ```python
 from utils.evaluate_models import evaluate_cate
@@ -361,7 +363,7 @@ plot_tsne(
 
 ### ECG/Sequential Data
 
-For high-dimensional sequential data (e.g., ECG signals):
+For high-dimensional data (e.g., ECG signals):
 
 ```python
 from models.ZNet.ZNet_ECG import ZNetECG

@@ -386,7 +386,6 @@ class TARNetTrainer():
         z_score =(ate / (torch.std(ite) / np.sqrt(len(X)))).detach().cpu().numpy()
 
         p_value_two_tailed = 2 * (1 - stats.norm.cdf(abs(z_score)))
-        # print(ate, z_score, p_value_two_tailed)
         return ate, z_score, p_value_two_tailed
 
     def evaluate(self, X, t, y, ite):

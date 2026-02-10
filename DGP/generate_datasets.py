@@ -5,7 +5,7 @@
 # Date: 02/06/2026
 #######################################################################################
 
-from DGP.dataset_class import DGPDataset, ECG_DGPDataset
+from DGP.dataset_class import ECG_DGPDataset
 from seed_utils import set_seed
 
 set_seed(42)
@@ -17,6 +17,8 @@ from DGP.phi_generation import PhiGeneration
 import os
 import pickle
 import numpy as np
+
+#######################################################################################
 
 def check_zero_add(arr, epsilon=0.1, even_out=False):
     """

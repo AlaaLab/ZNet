@@ -9,21 +9,10 @@ from seed_utils import set_seed
 set_seed(42)
 
 from tqdm import tqdm
-import numpy as np
-import scipy.stats as stats
-import matplotlib.pyplot as plt
-from sklearn.metrics import roc_auc_score, roc_curve
-import torch.nn.functional as F
-from torch import nn
 import torch
-import pandas as pd
-from sklearn.manifold import TSNE
-import itertools
-import statsmodels.api as sm  
 
-from models.ZNet.model_loss_utils import ZNetLoss, ZNetECGModel, X_T_Y_Model, X_T_Y_ECGModel, EarlyStopping, CateLoss, PearsonLoss, KDEMutualInformation
+from models.ZNet.model_loss_utils import ZNetLoss, ZNetECGModel, X_T_Y_ECGModel, EarlyStopping, CateLoss
 from models.ZNet.loss_plotting import ZNetECGLossPlotter
-from models.ZNet.pcgrad import PCGrad
 
 #######################################################################################
 class ZNetECG():
@@ -135,13 +124,13 @@ class ZNetECG():
         if self.pretrain_xty_model:
             self.z_optimizer = torch.optim.Adam([{'params':self.model.z.parameters(), 'weight_decay':0}, 
                                             {'params':self.model.t_hat.parameters(), 'weight_decay':self.weight_decay}
-                                            ], # TODO: should we separate this out?
+                                            ],
                                             lr=self.lr)
         else:
             self.z_optimizer = torch.optim.Adam([{'params':self.model.z.parameters(), 'weight_decay':0}, 
                                             {'params':self.model.t_hat.parameters(), 'weight_decay':self.weight_decay}, 
                                             {'params':self.model.x_t_y.parameters()} 
-                                            ], # TODO: should we separate this out?
+                                            ], 
                                             lr=self.lr)
         self.c_optimizer = torch.optim.Adam([{'params':self.model.c.parameters()},
                                                  {'params':self.model.c_y.parameters()},], 
@@ -167,9 +156,6 @@ class ZNetECG():
         for param in self.x_t_y.parameters():
             param.requires_grad = False
             
-        #if verbose:
-        #    print(f"Final loss after training X_T_Y_Model: {loss.item()}")
-    
     def calculate_loss(self, X_batch, t_batch, w_batch, y_batch, eval_mode=False):
         """
         Compute loss components for a batch.
@@ -376,9 +362,6 @@ class ZNetECG():
 
         loss_plotter = ZNetECGLossPlotter()
         for epoch in range(num_epochs):
-            # indices = torch.randperm(X.shape[0], device=X.device) 
-            
-            # self.model.train()
             
             progress_bar = tqdm(train_loader, desc="Training", disable=True)
             for batch in progress_bar:
@@ -438,7 +421,7 @@ class ZNetECG():
                 c_loss, z_loss, t_hat_loss, pearson_matrix_loss, mse_c, pearson_z_t, kl_c, feature_loss_c, kl_z, feature_loss_z, total_loss, val_cate_loss, mse_xt = self.val_step(val_loader)
                 loss_plotter.val_step(c_loss, z_loss, t_hat_loss, pearson_matrix_loss, mse_c, pearson_z_t, kl_c, feature_loss_c, kl_z, feature_loss_z, total_loss, mse_xt, val_cate_loss)
 
-            early_stopping.check_early_stop(total_loss) #np.mean(total_loss.detach().cpu().numpy().item()))
+            early_stopping.check_early_stop(total_loss) 
 
             if use_early_stopping and early_stopping.stop_training:
                 if plot_losses:

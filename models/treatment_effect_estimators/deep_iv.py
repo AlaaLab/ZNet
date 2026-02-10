@@ -31,7 +31,7 @@ class second_stage_nn(pl.LightningModule):
         self.layer2 = nn.Linear(config["hidden_size2"], config["hidden_size2"])
         self.layer3 = nn.Linear(config["hidden_size2"], 1)
         self.dropout = nn.Dropout(config["dropout2"])
-        # self.cate = config["cate"]
+        
         self.z_dim = config["z_dim"]
         self.optimizer = torch.optim.Adam(self.parameters(), lr=config["lr2"])
         self.first_stage_nn = first_stage_nn
@@ -123,7 +123,7 @@ class second_stage_nn(pl.LightningModule):
         self.eval()
         n = x_np.shape[0]
         X = torch.from_numpy(x_np.astype(np.float32))
-        # A = torch.from_numpy(a_np.astype(np.float32))
+        
         Z = torch.from_numpy(z_np.astype(np.float32))
         pi = self.first_stage_nn.forward(torch.concat((Z, X), dim=1)).detach()
 
@@ -131,8 +131,8 @@ class second_stage_nn(pl.LightningModule):
         x1 = torch.concat((torch.ones(n, 1).type_as(X), X), dim=1)
 
         Y_hat0, Y_hat1 = self.forward(x0, x1)
-        # (1 - pi) * Y_hat0 + pi*Y_hat1
-        return (1 - pi) * Y_hat0 + pi*Y_hat1 #torch.where(A==1, Y_hat1, Y_hat0).detach().numpy()
+        
+        return (1 - pi) * Y_hat0 + pi*Y_hat1 
     
     def predict_ite(self, x_np):
         self.eval()
@@ -188,8 +188,6 @@ class DeepIV(DownstreamParent):
         super().__init__('DeepIV', model)
 
     def train_DeepIV(self):
-        # Y, A, Z, X = helper.split_data(self.data)
-        # self.data = np.concatenate((np.expand_dims(Y, 1), np.expand_dims(A, 1), Z, X), 1)
         first_stage = self.train_first_stage()
         second_stage = self.train_second_stage(first_stage)
         return second_stage
@@ -214,7 +212,6 @@ class DeepIV(DownstreamParent):
         config2['log_file'] += "/second_stage"
 
         data1 = np.concatenate((Y.reshape(-1, 1), A.reshape(-1, 1), Z, X, self.data.ite.reshape(-1, 1)), 1)
-        # data1 = np.concatenate((np.expand_dims(Y, 1), np.expand_dims(A, 1), Z, X), 1)
         config2['z_dim'] = Z.shape[1]
         second_stage, _ = helper.train_nn(data=data1, config=config2, model_class=second_stage_nn, input_size=X.shape[1] + 1,
                                     validation=self.validation, logging=self.logging, first_stage_nn=first_stage, epochs=self.epochs2,

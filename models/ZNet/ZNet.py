@@ -9,16 +9,7 @@ from seed_utils import set_seed
 set_seed(42)
 
 import numpy as np
-import scipy.stats as stats
-import matplotlib.pyplot as plt
-from sklearn.metrics import roc_auc_score, roc_curve
-import torch.nn.functional as F
-from torch import nn
 import torch
-import pandas as pd
-from sklearn.manifold import TSNE
-import itertools
-import statsmodels.api as sm  
 
 from models.ZNet.model_loss_utils import ZNetLoss, ZNetModel, X_T_Y_Model, EarlyStopping, CateLoss, PearsonLoss, KDEMutualInformation
 from models.ZNet.loss_plotting import ZNetLossPlotter
@@ -130,13 +121,13 @@ class ZNet():
         if self.pretrain_xty_model:
             self.z_optimizer = torch.optim.Adam([{'params':self.model.z.parameters(), 'weight_decay':0}, 
                                             {'params':self.model.t_hat.parameters(), 'weight_decay':self.weight_decay}
-                                            ], # TODO: should we separate this out?
+                                            ],
                                             lr=self.lr)
         else:
             self.z_optimizer = torch.optim.Adam([{'params':self.model.z.parameters(), 'weight_decay':0}, 
                                             {'params':self.model.t_hat.parameters(), 'weight_decay':self.weight_decay}, 
                                             {'params':self.model.x_t_y.parameters()} 
-                                            ], # TODO: should we separate this out?
+                                            ], 
                                             lr=self.lr)
         self.c_optimizer = torch.optim.Adam([{'params':self.model.c.parameters()},
                                                  {'params':self.model.c_y.parameters()},], 
@@ -236,7 +227,6 @@ class ZNet():
             if self.criterion.z_pearson_loss_alpha > 0:
                 z_loss_list.append(z_loss)
             if self.criterion.pearson_matrix_alpha > 0:
-                # Do we want both here?
                 z_loss_list.append(pearson_matrix_loss)
                 c_loss_list.append(pearson_matrix_loss)
             if self.criterion.t_hat_alpha > 0:
@@ -264,11 +254,6 @@ class ZNet():
             if self.criterion.feature_loss.kl_loss_coeff > 0 or self.criterion.feature_loss.feature_corr_loss_coeff > 0: kl_z.backward()
             if self.criterion.train_xt_net: mse_xt.backward()
 
-        # print(f"Gradients - C: {[p.grad for p in self.model.c.parameters() if p.grad is not None]}, Z: {[p.grad for p in self.model.z.parameters() if p.grad is not None]}, T_hat: {[p.grad for p in self.model.t_hat.parameters() if p.grad is not None]}")
-        # Check if gradients are none
-        # if any(torch.isnan(p.grad).any() for p in self.model.c.parameters()) or any(torch.isnan(p.grad).any() for p in self.model.z.parameters()) or any(torch.isnan(p.grad).any() for p in self.model.t_hat.parameters()):
-        #     # import pdb; pdb.set_trace()
-        #     raise ValueError("Some gradients are NaN")
         self.c_optimizer.step()
         self.z_optimizer.step()
 
@@ -352,13 +337,9 @@ class ZNet():
             
             for i in range(0, X.shape[0], batch_size):
                 batch_X, batch_y, batch_t = X[indices[i:i+batch_size]], y[indices[i:i+batch_size]], t[indices[i:i+batch_size]]
-                # batch_X, batch_t, batch_y = self._to_device(batch_X, batch_t, batch_y)
                 c, z, t_hat, c_y, x_t_y = self.model(batch_X, batch_t)
                 c_loss, z_loss, pearson_matrix_loss, t_hat_loss, kl_c, feature_loss_c, kl_z, feature_loss_z, mse_c, pearson_z_t, mse_xt = self.criterion.forward(c, z, t_hat, c_y, x_t_y, batch_X, batch_y, batch_t)
 
-                # print(f"Epoch {epoch+1}/{num_epochs}, Batch {i//batch_size+1}, C Loss: {c_loss.item()}, Z Loss: {z_loss.item()}, T Hat Loss: {t_hat_loss.item()}, "
-                #       f"Pearson Matrix Loss: {pearson_matrix_loss.item()}, MSE C: {mse_c.item()}, "
-                #       f"Pearson Z T: {pearson_z_t.item()}, KL C: {kl_c.item()}, KL Z: {kl_z.item()}")
                 self.step_optimizers(self.criterion.c_pearson_loss_alpha * c_loss, # Correlation loss for C + Y (maximize)
                                      self.criterion.z_pearson_loss_alpha * z_loss, # Correlation loss for Z + (Y - Y|X, T) (minimize)
                                      self.criterion.pearson_matrix_alpha * pearson_matrix_loss, # Correlation loss for C and Z (minimize)
@@ -397,11 +378,7 @@ class ZNet():
                                              total_loss, 
                                              mse_xt,
                                              train_cate_loss)
-            # print(f"Epoch {epoch+1}/{num_epochs}, Batch {i//batch_size+1}, Total Loss: {total_loss.item()}")
-            # print(f"  C Loss: {c_loss.item()}, Z Loss: {z_loss.item()}, T Hat Loss: {t_hat_loss.item()}, "
-            #         f"Pearson Matrix Loss: {pearson_matrix_loss.item()}, MSE C: {mse_c.item()}, "
-            #         f"Pearson Z T: {pearson_z_t.item()}, KL C: {kl_c.item()}, KL Z: {kl_z.item()}")   
-            # print()
+            
             # Track epoch losses
             loss_plotter.train_step()
             if val_X is not None:

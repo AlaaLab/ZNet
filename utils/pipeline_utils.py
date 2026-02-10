@@ -29,6 +29,8 @@ import json
 import tempfile
 import shutil
 
+#######################################################################################
+
 # Parameters for different models for searching
 AUTOIV_PARAMS_INT = ['autoiv_params_emb_dim', 'autoiv_params_rep_dim', 'autoiv_params_epochs']
 AUTOIV_PARAMS_FLOAT = ['autoiv_params_sigma', 'autoiv_params_lrate', 'autoiv_params_coef_cx2y', 'autoiv_params_coef_zc2x', 'autoiv_params_coef_lld_zx',
@@ -616,13 +618,10 @@ def downstream_ate_objective(params, dataset, method):
         params['alpha'] = 0
     eval_params = {'methods': [method], f'{method}_model_params': {k: convert_param_downstream(v, k) for k, v in params.items()}}
 
-    # Could use nearest neighbors estimate
-    # nn_cate_estimate = nearest_neighbors(dataset.original_dataset, split='val')
     eval_params['verbose'] = False
     eval_params[f'{method}_model_params']['logging'] = False
     eval_results = evaluate_generatediv_dataset(dataset, eval_params)
-    # mse = np.abs(nn_cate_estimate - eval_results[f'val_ate_{method}']) #** 2
-
+    
     return -1. * eval_results[f'val_mse_{method}'] # model objective loss
 
 def downstream_multi_objective(params, dataset, method):
@@ -665,18 +664,14 @@ def convert_param_multi_obj(value, key, params):
     Returns:
         Converted value.
     """
-    # print(f"Converting parameter {key} with value {value} of type {type(value)}")
+    
     if key in ZNET_PARAMS_BOOL:
-        # print(f"Converting boolean parameter {key} to bool: {bool(round(value))}")
         return bool(round(value))
     elif key == 'znet_params_sm_temp' and bool(round(params['znet_params_use_sm'])):
-        # print(f"Setting {key} to 1 since model_use_sm is False")
         return 1
     elif key in ZNET_PARAMS_INT + AUTOIV_PARAMS_INT + GIV_PARAMS_INT + VIV_PARAMS_INT:
-        # print(f"Converting parameter {key} to int: {int(round(value))}")
         return int(round(value))
     else:
-        # print(f"Leaving parameter {key} as float: {value}")
         return value
         
 def multi_objective_function(params, dataset, save_results=None, model_type='znet'):
@@ -692,71 +687,52 @@ def multi_objective_function(params, dataset, save_results=None, model_type='zne
     Returns:
         tuple: Objective values for multi-objective tuning.
     """
-    # set_seed(42)
     def save_intermediate_results(params, results, save_results):
         if save_results is not None:
             combined = {**params, **results}
             with open(save_results, 'a') as f:
                 f.write(json.dumps(combined) + '\n')
     
-    # if save_results is not None:
-    #     temp_file = save_results + '.tmp'
-    # TODO: Change this to match what we will put the params in as
     if model_type == 'znet':
         model_params = {k[len('znet_params_'):]: convert_param_multi_obj(v, k, params) for k, v in params.items() if k.startswith("znet_params_")}
         train_params = {k[len('znet_train_params_'):]: convert_param_multi_obj(v, k, params) for k, v in params.items() if k.startswith("znet_train_params_")}
         dim_options = {k[len('dim_options_'):]: convert_param_multi_obj(v, k, params) for k, v in params.items() if k.startswith("dim_options_")}
-        # TODO: change this
-        # model_params['use_mi_corr_loss'] = False
-        # model_params['use_mi_matrix_loss'] = False
         train_params['use_early_stopping'] = False 
         model_params['weight_decay'] = 0
         dim_options['y_dim'] = 1
-        # if save_results is not None: save_intermediate_results({**model_params, **train_params, **dim_options}, {}, temp_file)
         _, gen_data, _ = train_znet(dataset, model_params, train_params, dim_options)
     if model_type == 'znet_ecg':
         model_params = {k[len('znet_params_'):]: convert_param_multi_obj(v, k, params) for k, v in params.items() if k.startswith("znet_params_")}
         train_params = {k[len('znet_train_params_'):]: convert_param_multi_obj(v, k, params) for k, v in params.items() if k.startswith("znet_train_params_")}
         dim_options = {k[len('dim_options_'):]: convert_param_multi_obj(v, k, params) for k, v in params.items() if k.startswith("dim_options_")}
-        # TODO: change this
-        # model_params['use_mi_corr_loss'] = False
-        # model_params['use_mi_matrix_loss'] = False
         train_params['use_early_stopping'] = False 
         model_params['weight_decay'] = 0
         dim_options['y_dim'] = 1
-        # if save_results is not None: save_intermediate_results({**model_params, **train_params, **dim_options}, {}, temp_file)
         _, gen_data, _ = ecg_full_train(dataset, model_params, train_params, dim_options)
     elif model_type == 'autoiv':
         model_params = {k[len('autoiv_params_'):]: convert_param_multi_obj(v, k, params) for k, v in params.items() if k.startswith("autoiv_params_")}
         train_params = {}
         dim_options = {}
-        # if save_results is not None: save_intermediate_results({**model_params, **train_params, **dim_options}, {}, temp_file)
         _, gen_data, _ = train_autoiv(dataset, model_params)
     elif model_type == 'giv':
         model_params = {k[len('giv_params_'):]: convert_param_multi_obj(v, k, params) for k, v in params.items() if k.startswith("giv_params_")}
         train_params = {}
         dim_options = {}
-        # if save_results is not None: save_intermediate_results({**model_params, **train_params, **dim_options}, {}, temp_file)
         _, gen_data, _ = train_giv(dataset, model_params)
     elif model_type == 'viv':
         model_params = {k[len('viv_params_'):]: convert_param_multi_obj(v, k, params) for k, v in params.items() if k.startswith("viv_params_")}
         train_params = {}
         dim_options = {}
-        # if save_results is not None: save_intermediate_results({**model_params, **train_params, **dim_options}, {}, temp_file)
-        # Check TMPDIR for viv model path
         _, gen_data, _ = train_viv(dataset, model_params, prepend_path=os.getenv('TMPDIR', ''))
     else:
         raise ValueError("model_type must be 'znet', 'autoiv', 'giv', or 'viv'")
     
-    # nn_cate_estimate = nearest_neighbors(gen_data.original_dataset, split='val')
+
     if np.isnan(gen_data.x).any():
         print("Generated data contains NaNs. Returning large negative scores.")
         print("Params: ", {**model_params, **train_params, **dim_options})
-        # return -1e6, -1e6, -1e6
     eval_results = evaluate_generatediv_dataset(gen_data, 
                                  {'methods': ['tsls', 'ols', 'diff_in_means', 'exogeneity', 'independence', 'relevance']})
-    # mse = (nn_cate_estimate - eval_results['val_TSLS_ATE']) ** 2
-    # print('Val TSLS: ', eval_results['val_TSLS_ATE'])
     fstat = eval_results['val_relevance_f_stat']
     ideal_fstat = 40
     fstat_score = (ideal_fstat - fstat) ** 2
@@ -768,9 +744,6 @@ def multi_objective_function(params, dataset, save_results=None, model_type='zne
                 **train_params,
                 **dim_options
             }, eval_results, save_results)
-    # print(f"MSE: {mse}, F-stat: {fstat}")
-    # print()
-    # reset_to_random()
     return -1. * fstat_score, -1. * independence_zx
     
 
@@ -790,8 +763,6 @@ def run_geniv_bayesian_search(param_bounds, dataset, n_calls=20, n_initial_point
     Returns:
         tuple: (best_params, pareto_params, pareto_results)
     """
-    # if save_results is None:
-    #     save_results = f'{model_type}_bayesian_search_results_{dataset.name}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.jsonl'
     obj_names = ['Negative F-Statistic MSE', 'Negative Independence Corr']
     tuner = MultiObjectiveHyperparameterTuner(
         param_bounds=param_bounds,
@@ -807,16 +778,6 @@ def run_geniv_bayesian_search(param_bounds, dataset, n_calls=20, n_initial_point
     # Read in all results
     # Instead of reading from file, we can get results directly from tuner
     pareto_results = pd.DataFrame([dict(zip(obj_names, o['objectives'])) for i, o in enumerate(tuner.trial_history) if pareto_mask[i]])
-    # all_results = []
-    # with open(save_results, 'r') as f:
-    #     for line in f:
-    #         all_results.append(json.loads(line))
-    # pareto_results = [r for i, r in enumerate(all_results) if pareto_mask[i]]
-    
-    # Save pareto results
-    # pareto_df = pd.DataFrame(pareto_results)
-    # pareto_df.to_csv(f"{save_results}/pareto_front.csv", index=False)
-
     return pareto_Y, pareto_params, pareto_results
 
 def run_downstream_bayesian_search(param_bounds, dataset, method, n_calls=20, n_initial_points=5, dir_name=None, multi_objective=True):
