@@ -1,6 +1,6 @@
-# ZNet: Causal Effect Estimation with Learned Instrument Representations
+# Causal Effect Estimation with Learned Instrument Representations
 
-ZNet is a neural network framework for learning instrumental variable (IV) representations from observational data. The model learns the structural causal model of an IV with moment based constraints to force the IV conditoins. The result is separating observed data into confounders and an instrumental component to enable robust causal effect estimation in the presence of unobserved confounding.
+ZNet is a neural network framework for learning instrumental variable (IV) representations from observational data. The model learns the structural causal model of an IV with moment based constraints to force the IV conditions. The result is separating observed data into confounders and an instrumental component to enable robust causal effect estimation in the presence of unobserved confounding.
 
 ## Table of Contents
 
